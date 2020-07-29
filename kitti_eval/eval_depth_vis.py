@@ -23,13 +23,13 @@ parser.add_argument('--min_depth', type=float, default=1e-3, help="Threshold for
 parser.add_argument('--max_depth', type=float, default=80, help="Threshold for maximum depth")
 parser.add_argument('--vis_dir', type=str, help='Path to the visualization output directory')
 parser.add_argument('--interp', default=False, type=lambda x: (str(x).lower() == 'true'), help="Whether to interpolation depth")
-parser.add_argument('--vis_limit',type=int, default=-1, help="How many images processing. -1 for no limits")
-parser.add_argument('--show_vis',default=False, type=lambda x: (str(x).lower() == 'true'), help="Whether to show visualization")
-parser.add_argument('--mask_eval',default=False, type=lambda x: (str(x).lower() == 'true'), help="Whether to also show masked evaluation")
-parser.add_argument('--mask_kitti_dir',default="",type=str,help="Where for the kitti test dataset semantic results")
-parser.add_argument('--mask_suffix',default="", type=str, help="The suffix for semantic files. Could be just '.npy' ")
-parser.add_argument('--mask_by_channel_start_index',default="",type=str,help="-1 for all, 0<=x<=18 for a specific label")
-parser.add_argument('--mask_by_channel_end_index',default="",type=str,help="-1 for all, 0<=x<=18 for a specific label")
+parser.add_argument('--vis_limit', type=int, default=-1, help="How many images processing. -1 for no limits")
+parser.add_argument('--show_vis', default=False, type=lambda x: (str(x).lower() == 'true'), help="Whether to show visualization")
+parser.add_argument('--mask_eval', default=False, type=lambda x: (str(x).lower() == 'true'), help="Whether to also show masked evaluation")
+parser.add_argument('--mask_kitti_dir', default="", type=str,help="Where for the kitti test dataset semantic results")
+parser.add_argument('--mask_suffix', default="", type=str, help="The suffix for semantic files. Could be just '.npy' ")
+parser.add_argument('--mask_by_channel_start_index', default="", type=str, help="-1 for all, 0<=x<=18 for a specific label")
+parser.add_argument('--mask_by_channel_end_index', default="", type=str, help="-1 for all, 0<=x<=18 for a specific label")
 
 args = parser.parse_args()
 
@@ -100,8 +100,7 @@ def main():
         for t_id in range(num_test):
 
             if load_gt_from_file:
-
-                img_size_h,img_size_w=loaded_gt_depths[t_id].shape
+                img_size_h,img_size_w = loaded_gt_depths[t_id].shape
                 depth = loaded_gt_depths[t_id]
                 interp = loaded_gt_interps[t_id]
 
@@ -161,7 +160,7 @@ def main():
 
         for i,line in enumerate(test_files):
             # naming style and loading method
-            sem_seg = np.load(args.mask_kitti_dir+line[:-4]+args.mask_suffix) 
+            sem_seg = np.load(os.path.join(args.mask_kitti_dir, line[:-4]+args.mask_suffix)) 
             #TODO fetch the background
             if args.mask_by_channel_start_index=="":
                 bg_masks.append((sem_seg<=10).astype(np.uint8))
@@ -225,8 +224,8 @@ def main():
     print('Evaluating {} took {:.4f} secs'.format(args.pred_file, time.time()-t1)) # adapt to py3
     print("{:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}, {:>10}".format('abs_rel', 'sq_rel', 'rms', 'log_rms', 'd1_all', 'a1', 'a2', 'a3'))
     print("{:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}".format(abs_rel.mean(), sq_rel.mean(), rms.mean(), log_rms.mean(), d1_all.mean(), a1.mean(), a2.mean(), a3.mean()))  
+
     if args.mask_eval: # print for semantic mask evaluation
         print("{:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}, {:10.4f}".format(bg_abs_rel.mean(), bg_sq_rel.mean(), bg_rms.mean(), bg_log_rms.mean(), bg_d1_all.mean(), bg_a1.mean(), bg_a2.mean(), bg_a3.mean()))
-
 
 main()

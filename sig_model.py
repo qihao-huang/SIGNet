@@ -22,23 +22,27 @@ class SIGNetModel(object):
         np.random.seed(seed)
         random.seed(seed)
 
-        self.tgt_image = self.preprocess_image(tgt_image)
-        self.src_image_stack = self.preprocess_image(src_image_stack)
-        self.intrinsics = intrinsics
+        self.tgt_image = self.preprocess_image(tgt_image)               # (4, 128, 416, 3)
+        self.src_image_stack = self.preprocess_image(src_image_stack)   # (4, 128, 416, 6)
+        self.intrinsics = intrinsics                                    # (4, 4, 3, 3)
 
         #TODO add semantics feed-in
         tgt_sem, tgt_sem_map, tgt_sem_mask, tgt_sem_edge = tgt_sem_tuple
         src_sem_stack, src_sem_map_stack, src_sem_mask_stack, src_sem_edge_stack = src_sem_stack_tuple
-        
-        self.tgt_sem_map = self.preprocess_sem(tgt_sem_map, opt.sem_num_class-1, True)
-        self.src_sem_map_stack = self.preprocess_sem(src_sem_map_stack, opt.sem_num_class-1, True)
 
-        self.tgt_sem = self.preprocess_sem(tgt_sem)
-        self.src_sem_stack = self.preprocess_sem(src_sem_stack)
+        # Normalize dense map (4,128,1248,1)X{0,1,...,18}, /19
+        self.tgt_sem_map = self.preprocess_sem(tgt_sem_map, opt.sem_num_class-1, True) # [4, 128, 416, 1]
+        self.src_sem_map_stack = self.preprocess_sem(src_sem_map_stack, opt.sem_num_class-1, True)  # [4, 128, 416, 1]
 
-        self.tgt_sem_mask = self.preprocess_sem(tgt_sem_mask)
-        self.src_sem_mask_stack = self.preprocess_sem(src_sem_mask_stack)
-        
+        # tgt_sem (4,128,1248,19)X{0,1}   src_sem_stack (4,128,1248,2*19)X{0,1}
+        self.tgt_sem = self.preprocess_sem(tgt_sem) # [4, 128, 416, 19]
+        self.src_sem_stack = self.preprocess_sem(src_sem_stack) # [4, 128, 416, 38]
+
+        # tgt_sem_mask (4,128,1248,c)   src_sem_mask_stack (4,128,1248,2*c)
+        self.tgt_sem_mask = self.preprocess_sem(tgt_sem_mask) # [4, 128, 416, 1] 
+        self.src_sem_mask_stack = self.preprocess_sem(src_sem_mask_stack) # [4, 128, 416, 2]
+
+        # None
         self.tgt_sem_edge = self.preprocess_sem(tgt_sem_edge)
         self.src_sem_edge_stack = self.preprocess_sem(src_sem_edge_stack)
 
@@ -46,17 +50,22 @@ class SIGNetModel(object):
         tgt_ins0, tgt_ins0_map, tgt_ins0_edge, tgt_ins1_edge = tgt_ins_tuple
         src_ins0_stack, src_ins0_map_stack, src_ins0_edge_stack, src_ins1_edge_stack = src_ins_stack_tuple
         
-        self.tgt_ins0_map = self.preprocess_sem(tgt_ins0_map, opt.ins_num_class-1, True)
-        self.src_ins0_map_stack = self.preprocess_sem(src_ins0_map_stack, opt.ins_num_class-1, True)
+        # Normalize dense map (4,128,1248,1)X{0,1,...,80} / 80
+        self.tgt_ins0_map = self.preprocess_sem(tgt_ins0_map, opt.ins_num_class-1, True) #  [4, 128, 416, 1] 
+        self.src_ins0_map_stack = self.preprocess_sem(src_ins0_map_stack, opt.ins_num_class-1, True) #  [4, 128, 416, 2]
 
-        self.tgt_ins0 = self.preprocess_sem(tgt_ins0)
-        self.src_ins0_stack = self.preprocess_sem(src_ins0_stack)
+        # tgt_ins0_map (4,128,1248,1)X{0,1,...,80}  src_ins0_map_stack (4,128,1248,2*1)X{0,1,...,80}
+        self.tgt_ins0 = self.preprocess_sem(tgt_ins0) # [4, 128, 416, 81] 
+        self.src_ins0_stack = self.preprocess_sem(src_ins0_stack) # [4, 128, 416, 162]
 
+        # None
         self.tgt_ins0_edge = self.preprocess_sem(tgt_ins0_edge)
         self.src_ins0_edge_stack = self.preprocess_sem(src_ins0_edge_stack)
 
-        self.tgt_ins1_edge = self.preprocess_sem(tgt_ins1_edge)
-        self.src_ins1_edge_stack = self.preprocess_sem(src_ins1_edge_stack)
+
+        # tgt_ins1_edge (4,128,1248,c)   src_ins1_edge_stack (4,128,1248,2*c)
+        self.tgt_ins1_edge = self.preprocess_sem(tgt_ins1_edge) # [4, 128, 416, 1]
+        self.src_ins1_edge_stack = self.preprocess_sem(src_ins1_edge_stack) #  [4, 128, 416, 2]
 
         self.build_model()
 
@@ -67,29 +76,36 @@ class SIGNetModel(object):
 
     def build_model(self):
         opt = self.opt
+        # [(4, 128, 416, 3), (4, 64, 208, 3),  (4, 32, 104, 3),  (4, 16, 52, 3)]
         self.tgt_image_pyramid = self.scale_pyramid(self.tgt_image, opt.num_scales)
+        # [(8, 128, 416, 3), (8, 64, 208, 3), (8, 32, 104, 3), (8, 16, 52, 3)]
         self.tgt_image_tile_pyramid = [tf.tile(img, [opt.num_source, 1, 1, 1]) \
-                                      for img in self.tgt_image_pyramid]
+                                      for img in self.tgt_image_pyramid]    
 
         # src images concated along batch dimension
         if self.src_image_stack != None:
+            # (8, 128, 416, 3), concat src_1 and src_2 in axis=0
             self.src_image_concat = tf.concat([self.src_image_stack[:,:,:,3*i:3*(i+1)] \
                                     for i in range(opt.num_source)], axis=0)
+
+            # [(8, 128, 416, 3), (8, 64, 208, 3), (8, 32, 104, 3), (8, 16, 52, 3)]
             self.src_image_concat_pyramid = self.scale_pyramid(self.src_image_concat, opt.num_scales)
 
         #TODO build pyramids for semantic segmentations
+        # True
         if opt.sem_as_loss:
-            K=opt.sem_num_class
+            K=opt.sem_num_class # 19
             self.tgt_sem_pyramid = self.sem_scale_pyramid(self.tgt_sem, opt.num_scales)
             self.tgt_sem_tile_pyramid = [tf.tile(img, [opt.num_source, 1, 1, 1]) \
                                         for img in self.tgt_sem_pyramid]
 
+            # True
             if opt.sem_mask_explore:
                 self.tgt_sem_mask_pyramid = self.sem_scale_pyramid(self.tgt_sem_mask, opt.num_scales)
                 self.tgt_sem_mask_tile_pyramid = [tf.tile(img, [opt.num_source, 1, 1, 1]) \
                             for img in self.tgt_sem_mask_pyramid]
 
-            
+            # False
             if opt.sem_edge_explore:
                 self.tgt_sem_edge_pyramid = self.sem_scale_pyramid(self.tgt_sem_edge, opt.num_scales)
 
@@ -99,26 +115,32 @@ class SIGNetModel(object):
                                         for i in range(opt.num_source)], axis=0)
                 self.src_sem_concat_pyramid = self.sem_scale_pyramid(self.src_sem_concat, opt.num_scales)
 
+                # True
                 if opt.sem_mask_explore:
                     self.src_sem_mask_concat = tf.concat([self.src_sem_mask_stack[:,:,:,1*i:1*(i+1)] \
                                         for i in range(opt.num_source)], axis=0)
                     self.src_sem_mask_concat_pyramid = self.sem_scale_pyramid(self.src_sem_mask_concat, opt.num_scales)
 
+                # False
                 if opt.sem_edge_explore:
                     self.src_sem_edge_concat = tf.concat([self.src_sem_edge_stack[:,:,:,1*i:1*(i+1)] \
                                         for i in range(opt.num_source)], axis=0)
                     self.src_sem_edge_concat_pyramid = self.sem_scale_pyramid(self.src_sem_edge_concat, opt.num_scales)
 
         #TODO build pyramids for instance segmentations
+        # False
         if opt.ins_as_loss:
             K=opt.ins_num_class
             self.tgt_ins0_pyramid = self.sem_scale_pyramid(self.tgt_ins0, opt.num_scales)
+            # resize_nearest_neighbor
             self.tgt_ins0_map_pyramid=self.sem_scale_pyramid(self.tgt_ins0_map, opt.num_scales, True)
 
+            # True
             if opt.ins1_edge_explore:
                 self.tgt_ins1_edge_pyramid = self.sem_scale_pyramid(self.tgt_ins1_edge, opt.num_scales)
                 for i,img in enumerate(self.tgt_ins1_edge_pyramid):
                     tf.summary.image("aprior_tgt_ins1_edge_pyramid" + str(i), self.tgt_ins1_edge_pyramid[i], max_outputs=opt.max_outputs)
+            
             if self.src_ins0_stack!=None:
                 self.src_ins0_concat = tf.concat([self.src_ins0_stack[:,:,:,K*i:K*(i+1)] \
                                         for i in range(opt.num_source)], axis=0)
@@ -128,6 +150,7 @@ class SIGNetModel(object):
                                         for i in range(opt.num_source)], axis=0)
                 self.src_ins0_map_concat_pyramid = self.sem_scale_pyramid(self.src_ins0_map_concat, opt.num_scales, True)
 
+                # True
                 if opt.ins1_edge_explore:
                     self.src_ins1_edge_concat = tf.concat([self.src_ins1_edge_stack[:,:,:,1*i:1*(i+1)] \
                                         for i in range(opt.num_source)], axis=0)
@@ -145,9 +168,11 @@ class SIGNetModel(object):
         if opt.add_dispnet and opt.add_posenet:
             self.build_rigid_flow_warping()
 
+        # False
         if opt.sem_assist and opt.add_segnet:
             self.build_segnet()
 
+        # False 
         if opt.add_flownet:
             self.build_flownet()
             if opt.mode == 'train_flow':
@@ -170,20 +195,23 @@ class SIGNetModel(object):
 
         dispnet_inputs_extras=[]
         # augment in channel dim with semantic information
+        # True
         if opt.sem_as_feat:
+            # True
             if opt.one_hot_sem_feat:
-                k=opt.sem_num_class
-
+                k=opt.sem_num_class # 19
                 dispnet_inputs_sem = self.tgt_sem
                 if opt.mode != 'test_depth':
                     for i in range(opt.num_source):
                         dispnet_inputs_sem = tf.concat([dispnet_inputs_sem, self.src_sem_stack[:,:,:,k*i:k*(i+1)]], axis=0)
             else:
+                # False
                 if opt.sem_mask_feature:
                     dispnet_inputs_sem = self.tgt_sem_mask
                     if opt.mode != 'test_depth':
                         for i in range(opt.num_source):
                             dispnet_inputs_sem = tf.concat([dispnet_inputs_sem, self.src_sem_mask_stack[:,:,:,i:(i+1)]], axis=0)
+                # False
                 elif opt.sem_edge_feature:
                     dispnet_inputs_sem = self.tgt_sem_edge
                     if opt.mode != 'test_depth':
@@ -194,17 +222,22 @@ class SIGNetModel(object):
                     if opt.mode != 'test_depth':
                         for i in range(opt.num_source):
                             dispnet_inputs_sem = tf.concat([dispnet_inputs_sem, self.src_sem_map_stack[:,:,:,i:(i+1)]], axis=0)
+            
             dispnet_inputs_extras.append(dispnet_inputs_sem)
 
+        # True
         if opt.ins_as_feat:
+            # True
             if opt.ins0_onehot_feature:
-                k=opt.ins_num_class
+                k=opt.ins_num_class # 81
                 dispnet_inputs_ins0 = self.tgt_ins0
                 if opt.mode != "test_depth":
                     for i in range(opt.num_source):
                         dispnet_inputs_ins0 = tf.concat([dispnet_inputs_ins0, self.src_ins0_stack[:,:,:,k*i:k*(i+1)]], axis=0)
+                
                 dispnet_inputs_extras.append(dispnet_inputs_ins0)
 
+            # False
             if opt.ins0_dense_feature:
                 dispnet_inputs_ins0_map = self.tgt_ins0_map
                 if opt.mode != "test_depth":
@@ -212,6 +245,7 @@ class SIGNetModel(object):
                         dispnet_inputs_ins0_map = tf.concat([dispnet_inputs_ins0_map, self.src_ins0_map_stack[:,:,:,i:(i+1)]], axis=0)
                 dispnet_inputs_extras.append(dispnet_inputs_ins0_map)
 
+            # False
             if opt.ins0_edge_feature:
                 dispnet_inputs_ins0_edge = self.tgt_ins0_edge
                 if opt.mode != "test_depth":
@@ -219,6 +253,7 @@ class SIGNetModel(object):
                         dispnet_inputs_ins0_edge = tf.concat([dispnet_inputs_ins0_edge, self.src_ins0_edge_stack[:,:,:,i:(i+1)]], axis=0)
                 dispnet_inputs_extras.append(dispnet_inputs_ins0_edge)
 
+            # True
             if opt.ins1_edge_feature:
                 dispnet_inputs_ins1_edge = self.tgt_ins1_edge
                 if opt.mode != "test_depth":
@@ -228,18 +263,21 @@ class SIGNetModel(object):
  
         self.dispnet_inputs_extra=None
         if len(dispnet_inputs_extras)>0:
-            self.dispnet_inputs_extra = tf.concat(dispnet_inputs_extras, axis=3)
+            self.dispnet_inputs_extra = tf.concat(dispnet_inputs_extras, axis=3) # [12, 128, 416, 101]
 
         #TODO not blocked (no new network) and having extra; concat image and sem
         if opt.block_dispnet_sem==False and self.dispnet_inputs_extra!=None: 
-            self.dispnet_inputs = tf.concat([self.dispnet_inputs, self.dispnet_inputs_extra], axis=3)
+            # here
+            self.dispnet_inputs = tf.concat([self.dispnet_inputs, self.dispnet_inputs_extra], axis=3) # [12, 128, 416, 104]
 
+        # False
         if opt.block_dispnet_sem and opt.new_sem_dispnet and self.dispnet_inputs_extra!=None:
             self.pred_disp = disp_net(opt, self.dispnet_inputs, False) + disp_net(opt, self.dispnet_inputs_extra, True)
         else:
+            # here
             self.pred_disp = disp_net(opt, self.dispnet_inputs, False)
 
-
+        # True
         if opt.scale_normalize:
             # As proposed in https://arxiv.org/abs/1712.00175, this can 
             # bring improvement in depth estimation, but not included in our paper.
@@ -251,17 +289,18 @@ class SIGNetModel(object):
         for i in range(len(self.pred_depth)):
             tf.summary.image('pred_depth_' + str(i), self.pred_depth[i], max_outputs=opt.max_outputs)
 
-
     def build_posenet(self):
         opt = self.opt
-
-        # build posenet_inputs
+        # build posenet_inputs: (4, 128, 416, 9 (tgt,src_1,src_2))
         self.posenet_inputs = tf.concat([self.tgt_image, self.src_image_stack], axis=3)
         
         posenet_inputs_extras=[]
         #TODO adding semantic as input
+        # True
         if opt.sem_as_feat:
+            # True
             if opt.one_hot_sem_feat:
+                # here
                 posenet_inputs_sem = tf.concat([self.tgt_sem, self.src_sem_stack], axis=3) #TODO problem!!! dimension cat upon?
             else:
                 if opt.sem_mask_feature:
@@ -274,31 +313,43 @@ class SIGNetModel(object):
             posenet_inputs_extras.append(posenet_inputs_sem)
 
         #TODO adding instance as input
+        # True
         if opt.ins_as_feat:
+            # True
             if opt.ins0_onehot_feature:
                 posenet_inputs_extras.append(tf.concat([self.tgt_ins0, self.src_ins0_stack], axis=3))
+            
+            # False
             if opt.ins0_dense_feature:
                 posenet_inputs_extras.append(tf.concat([self.tgt_ins0_map, self.src_ins0_map_stack], axis=3))
+
+            # False
             if opt.ins0_edge_feature:
                 posenet_inputs_extras.append(tf.concat([self.tgt_ins0_edge, self.src_ins0_edge_stack], axis=3))
+            
+            # True
             if opt.ins1_edge_feature:
                 posenet_inputs_extras.append(tf.concat([self.tgt_ins1_edge, self.src_ins1_edge_stack], axis=3))
 
         self.posenet_inputs_extra=None
         if len(posenet_inputs_extras)>0:
-            self.posenet_inputs_extra = tf.concat(posenet_inputs_extras, axis=3)
+            self.posenet_inputs_extra = tf.concat(posenet_inputs_extras, axis=3) # [4, 128, 416, 303]
 
         #TODO not blocked(no new network) and having extra; concat image and sem
-        if opt.block_posenet_sem==False and self.posenet_inputs_extra!=None: 
-            self.posenet_inputs = tf.concat([self.posenet_inputs, self.posenet_inputs_extra], axis=3)
+        if opt.block_posenet_sem==False and self.posenet_inputs_extra!=None:
+            # here 
+            self.posenet_inputs = tf.concat([self.posenet_inputs, self.posenet_inputs_extra], axis=3) # [4, 128, 416, 312]
 
+        # False
         if opt.block_posenet_sem and opt.new_sem_posenet and self.posenet_inputs_extra!=None:
             self.pred_poses = pose_net(opt, self.posenet_inputs, False) + pose_net(opt, self.posenet_inputs_extra, True)
         else:
+            # here
             self.pred_poses = pose_net(opt, self.posenet_inputs, False)
 
 
     #TODO build the simple transfer network for semantic segmentation
+    # False
     def build_segnet(self):
         opt = self.opt
 
@@ -344,6 +395,7 @@ class SIGNetModel(object):
                 else:
                     fwd_rigid_flow_concat = tf.concat([fwd_rigid_flow_concat, fwd_rigid_flow], axis=0)
                     bwd_rigid_flow_concat = tf.concat([bwd_rigid_flow_concat, bwd_rigid_flow], axis=0)
+
             self.fwd_rigid_flow_pyramid.append(fwd_rigid_flow_concat)
             self.bwd_rigid_flow_pyramid.append(bwd_rigid_flow_concat)
 
@@ -374,6 +426,7 @@ class SIGNetModel(object):
             tmp_fwd_rigid_error_scale=tf.reduce_mean(self.fwd_rigid_error_pyramid[i],axis=3,keepdims=True)
             tf.summary.image("fwd_rigid_error_scale" + str(i), tmp_fwd_rigid_error_scale, max_outputs=opt.max_outputs)
             self.fwd_rigid_error_scale.append(tmp_fwd_rigid_error_scale)
+        
         #TODO Record bwd rigid flow warp error on tensorboard
         for i in range(len(self.bwd_rigid_error_pyramid)):
             tmp_bwd_rigid_error_scale=tf.reduce_mean(self.bwd_rigid_error_pyramid[i],axis=3,keepdims=True)
@@ -381,8 +434,10 @@ class SIGNetModel(object):
             self.bwd_rigid_error_scale.append(tmp_bwd_rigid_error_scale)
 
         #TODO build rigid flow for semantic segmentations (similar to images)
+        # True
         if opt.sem_as_loss:
             # semantic warping by rigid flow
+            # False
             if opt.sem_warp_explore:
                 self.fwd_sem_rigid_warp_pyramid = [sem_flow_warp(self.src_sem_concat_pyramid[s], self.fwd_rigid_flow_pyramid[s], opt.sem_nn_warp) \
                                             for s in range(opt.num_scales)]
@@ -403,6 +458,7 @@ class SIGNetModel(object):
                     tf.summary.image("bwd_sem_rigid_error_scale" + str(i), tf.reduce_mean(self.bwd_sem_rigid_warp_error_pyramid[i],axis=3,keepdims=True), max_outputs=opt.max_outputs)
             
             #TODO Use sem mask to find error on **warped images**
+            # True
             if opt.sem_mask_explore:
                 self.fwd_sem_mask_error_pyramid = [self.image_similarity(self.fwd_rigid_warp_pyramid[s], self.tgt_image_tile_pyramid[s], self.tgt_sem_mask_tile_pyramid[s]) \
                                                 for s in range(opt.num_scales)]      
@@ -428,6 +484,7 @@ class SIGNetModel(object):
         # build flownet_inputs
         self.fwd_flownet_inputs = tf.concat([self.tgt_image_tile_pyramid[0], self.src_image_concat_pyramid[0]], axis=3)
         self.bwd_flownet_inputs = tf.concat([self.src_image_concat_pyramid[0], self.tgt_image_tile_pyramid[0]], axis=3)
+
         if opt.flownet_type == 'residual':
             self.fwd_flownet_inputs = tf.concat([self.fwd_flownet_inputs,
                                       self.fwd_rigid_warp_pyramid[0],
@@ -520,22 +577,26 @@ class SIGNetModel(object):
 
         for s in range(opt.num_scales):
             # rigid_warp_loss
+            # here
             if opt.mode == 'train_rigid' and opt.rigid_warp_weight > 0:
                 rigid_warp_loss += opt.rigid_warp_weight*opt.num_source/2 * \
                                 (tf.reduce_mean(self.fwd_rigid_error_pyramid[s]) + \
                                  tf.reduce_mean(self.bwd_rigid_error_pyramid[s]))
             #TODO sem_as_loss
+            # True
             if opt.mode == 'train_rigid' and opt.sem_as_loss:
-
+                # False
                 if opt.sem_warp_explore:
                     sem_warp_loss += opt.sem_warp_weight * opt.num_source/2 * \
                                 (tf.reduce_mean(self.fwd_sem_rigid_warp_error_pyramid[s]) + tf.reduce_mean(self.bwd_sem_rigid_warp_error_pyramid[s]))
                 
+                # True
                 if opt.sem_mask_explore:
                     sem_mask_loss += opt.sem_mask_weight * opt.num_source/2 * \
                                 (tf.reduce_mean(self.fwd_sem_mask_error_pyramid[s]) + \
                                  tf.reduce_mean(self.bwd_sem_mask_error_pyramid[s]))
-                
+
+                # False
                 if opt.sem_edge_explore:
                     sem_edge_loss += opt.sem_edge_weight /(2**s) * self.compute_sem_edge_smooth_loss(self.pred_disp[s],
                                 tf.concat([self.tgt_sem_edge_pyramid[s], self.src_sem_edge_concat_pyramid[s]], axis=0))            
@@ -576,6 +637,7 @@ class SIGNetModel(object):
             #     sem 0-18 (1 time)
             #     ins0 19-99, or 0-80 (2 times)
             #     ins1_edge 0-0, 81-81 or 100-100 (4 times)
+            # add_segnet is False
             if opt.mode=='train_rigid' and opt.sem_assist and opt.add_segnet:
                 n_sem=opt.sem_num_class
                 n_ins=opt.ins_num_class
@@ -626,20 +688,26 @@ class SIGNetModel(object):
         self.rigid_warp_loss = 0.0
         self.disp_smooth_loss = 0.0
 
+        # True
         if opt.sem_as_loss:
             self.sem_loss = 0.0
+            # False
             if opt.sem_warp_explore:
                 self.sem_warp_loss=0.0
+            # True
             if opt.sem_mask_explore:
                 self.sem_mask_loss=0.0
+            # False
             if opt.sem_edge_explore:
                 self.sem_edge_loss=0.0
         
+        # False
         if opt.sem_assist and opt.add_segnet:
             self.sem_seg_loss=0.0
             self.ins0_seg_loss=0.0
             self.ins1_edge_seg_loss=0.0
 
+        # False
         if opt.ins_as_loss:
             self.ins_loss = 0.0
 
@@ -651,18 +719,23 @@ class SIGNetModel(object):
             self.total_loss += self.img_loss
 
             #TODO our sem loss
+            # True
             if opt.sem_as_loss:
+                # False
                 if opt.sem_warp_explore:
                     self.sem_warp_loss = sem_warp_loss
                     self.sem_loss += self.sem_warp_loss
+                # True
                 if opt.sem_mask_explore:
                     self.sem_mask_loss = sem_mask_loss
                     self.sem_loss += self.sem_mask_loss 
+                # False
                 if opt.sem_edge_explore:
                     self.sem_edge_loss = sem_edge_loss
                     self.sem_loss += self.sem_edge_loss
                 self.total_loss += self.sem_loss
-                
+            
+            # False
             if opt.sem_assist and opt.add_segnet:
                 self.sem_seg_loss += sem_seg_loss
                 self.ins0_seg_loss += ins0_seg_loss

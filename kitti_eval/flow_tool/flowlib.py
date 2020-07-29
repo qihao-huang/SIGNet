@@ -12,7 +12,7 @@
 import png
 import pfm
 import numpy as np
-import matplotlib.colors as cl
+# import matplotlib.colors as cl
 # import matplotlib.pyplot as plt
 from PIL import Image
 from scipy import misc

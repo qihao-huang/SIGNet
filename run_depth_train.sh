@@ -12,13 +12,15 @@ if [ "$#" == 1 ]; then
 fi
 
 mkdir -p ${CHECKPOINT_DIR}/logs
-cp -r config ${CHECKPOINT_DIR}/logs/
+cp -r $1 ${CHECKPOINT_DIR}/logs/
+cp -r config/depth_base.cfg ${CHECKPOINT_DIR}/logs/
+cp -r config/depth_sem.cfg ${CHECKPOINT_DIR}/logs/
 
 ## Clarify the parameters
-PY_CMD="python3 sig_main.py \
+PY_CMD="python sig_main.py \
     --mode=train_rigid \
     --dataset_dir=${DATASET_DIR} \
-    ${SET_INIT_CKPT} \
+    --init_ckpt_file=${SET_INIT_CKPT} \
     --batch_size=${BATCH_SIZE} \
     --num_threads=${NUM_THREADS} \
     --seq_length=${SEQ_LENGTH} \
@@ -105,9 +107,10 @@ PY_CMD="python3 sig_main.py \
 
 
 ## Save parameters details into this log file
-echo ${PY_CMD} > ${CHECKPOINT_DIR}/logs/depth_train_cmd.txt
+echo -e ${PY_CMD//   /\\n} > ${CHECKPOINT_DIR}/logs/depth_train_cmd_read.txt
+echo ${PY_CMD} > ${CHECKPOINT_DIR}/logs/depth_train_cmd_ori.txt
 
 ## Start the training
 eval ${PY_CMD}
 
-
+exit

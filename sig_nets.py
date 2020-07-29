@@ -24,6 +24,7 @@ def disp_net(opt, dispnet_inputs, is_sem_separately=False):
     if opt.new_sem_dispnet and is_sem_separately:
         var_scope="depth_sem_net"
     else:
+        # here
         var_scope="depth_net"
 
     if opt.dispnet_encoder == 'vgg':

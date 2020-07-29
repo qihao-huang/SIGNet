@@ -2,31 +2,32 @@
 
 ## COMMAND-LINE PARAMETERS 
 source $1
-#MODEL_INDEX=$2
+# MODEL_INDEX=$2
+MODEL_INDEX=70000
 
 ## DIR LOGIC
 MODE=test_depth
-DATASET_DIR=../../data/kitti_raw/
-#INIT_CKPT_FILE=${CHECKPOINT_DIR}/model-${MODEL_INDEX}
-INIT_CKPT_FILE=${CHECKPOINT_DIR}/model
+DATASET_DIR=/userhome/34/h3567721/dataset/kitti/raw_data
+INIT_CKPT_FILE=${CHECKPOINT_DIR}/model-${MODEL_INDEX}
+# INIT_CKPT_FILE=${CHECKPOINT_DIR}/model
 BATCH_SIZE=1
 DEPTH_TEST_SPLIT=eigen
 OUTPUT_DIR=${INIT_CKPT_FILE}/output
 KITTI_DIR=${DATASET_DIR}
-#PRED_FILE=${OUTPUT_DIR}/model-${MODEL_INDEX}.npy
-PRED_FILE=${OUTPUT_DIR}/model.npy
+PRED_FILE=${OUTPUT_DIR}/model-${MODEL_INDEX}.npy
+# PRED_FILE=${OUTPUT_DIR}/model.npy
 SPLIT=${DEPTH_TEST_SPLIT}
 SEM_NUM_CLASS=19
 
 ## CUSTOMIZED PARAMETERS
-SHOW_VIS=false               # Whether to visualize result
+SHOW_VIS=true               # Whether to visualize result
 
 VIS_DIR=./outputs/depth/$3/  # Path to save the visualize result
 
 LIMIT=-1                      # How many samples to save (-1 for unlimit)
 INTERP=false                  # Interpolate for gt depth (To get paper's metrics, let INTERP=false)
 MASK_EVAL=false
-MASK_KITTI_DIR=../../data/test_files_eigen_semantic/ # Semantic segmentation for kitti test set
+MASK_KITTI_DIR=/userhome/34/h3567721/dataset/kitti/raw_data_test_sem # Semantic segmentation for kitti test set
 MASK_SUFFIX=".npy"
 
 mkdir -p ${OUTPUT_DIR}
@@ -34,14 +35,14 @@ mkdir -p ${OUTPUT_DIR}
 # RUNNING
 # 1. Run the inference (test)
 if [ "$#" -le 3 ];then
-python3 sig_main.py \
+python sig_main.py \
     --mode=${MODE} \
     --dataset_dir=${DATASET_DIR} \
     --init_ckpt_file=${INIT_CKPT_FILE} \
     --batch_size=${BATCH_SIZE} \
     --scale_normalize=${SCALE_NORMALIZE} \
     --sem_assist=${SEM_ASSIST} \
-    --sem_as_feat=${SEM_AS_FEAT} \
+    --SEM_AS_FEAT=${SEM_AS_FEAT} \
     --one_hot_sem_feat=${ONE_HOT_SEM_FEAT} \
     --sem_test_kitti_dir=${MASK_KITTI_DIR} \
     --sem_num_class=${SEM_NUM_CLASS} \
@@ -79,7 +80,7 @@ python3 sig_main.py \
 fi 
 
 ## 2. Run the evaluation
-python3 kitti_eval/eval_depth_vis.py \
+python kitti_eval/eval_depth_vis.py \
     --split=${SPLIT} \
     --kitti_dir=${KITTI_DIR} \
     --pred_file=${PRED_FILE} \
@@ -92,6 +93,6 @@ python3 kitti_eval/eval_depth_vis.py \
     --mask_suffix=${MASK_SUFFIX} \
     ${MASK_BY_CHANNEL_START_INDEX} \
     ${MASK_BY_CHANNEL_END_INDEX} \
-    | tee ${OUTPUT_DIR}/depth_eval_log_model.txt
-    #| tee ${OUTPUT_DIR}/depth_eval_log_model${MODEL_INDEX}.txt
+    | tee ${OUTPUT_DIR}/depth_eval_log_model${MODEL_INDEX}.txt
+    # | tee ${OUTPUT_DIR}/depth_eval_log_model.txt
 
