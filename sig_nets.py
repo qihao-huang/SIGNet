@@ -200,7 +200,9 @@ def build_resnet50(inputs, get_pred, is_training, var_scope):
                             normalizer_params=batch_norm_params if gopt.enable_batch_norm else None,
                             weights_regularizer=slim.l2_regularizer(0.0001),
                             activation_fn=tf.nn.relu):
+            print("build_resnet50: inputs", inputs.get_shape().as_list())
             conv1 = conv(inputs, 64, 7, 2) # H/2  -   64D
+            print("build_resnet50: conv1", conv1.get_shape().as_list())
             pool1 = maxpool(conv1,           3) # H/4  -   64D
             conv2 = resblock(pool1,      64, 3) # H/8  -  256D
             conv3 = resblock(conv2,     128, 4) # H/16 -  512D
